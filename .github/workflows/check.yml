@@ -1,0 +1,38 @@
+name: Netflix新着チェック
+
+on:
+  workflow_dispatch:  # cron-job.orgからAPI経由でトリガー
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # cache.jsonをコミットするために必要
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存インストール
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: スクレイピング実行
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python scraper.py
+
+      - name: キャッシュをコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cache.json
+          git diff --staged --quiet || git commit -m "Update cache [skip ci]"
+          git push
