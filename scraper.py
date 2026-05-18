@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
 CACHE_FILE = "cache.json"
-MAX_NOTIFY = 20
+MAX_NOTIFY = 10
 FEED_URL = "https://www.net-frx.com/feeds/posts/default?alt=json&max-results=150"
 CHECK_DAYS = 7  # 直近何日分を監視するか
 
