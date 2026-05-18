@@ -1,36 +1,60 @@
 import json
 import os
 import requests
-from playwright.sync_api import sync_playwright
+from datetime import datetime, timedelta
 
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK"]
 CACHE_FILE = "cache.json"
 MAX_NOTIFY = 20
-TARGET_URL = "https://www.net-frx.com/p/netflix-new-arrivals.html?m=1"
+FEED_URL = "https://www.net-frx.com/feeds/posts/default?alt=json&max-results=150"
+CHECK_DAYS = 7  # 直近何日分を監視するか
 
 def scrape_titles():
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
-
-        # 「もっと見る」ボタンの直前まで取得
-        # サムネイルとタイトルを持つ要素を探す（実際のセレクタは要確認）
-        items = page.evaluate("""() => {
-            const results = [];
-            // サムネイル画像とタイトルのセレクタ（要調整）
-            document.querySelectorAll('.post-body img, .card img').forEach(img => {
-                const title = img.alt || img.title || '';
-                const thumb = img.src || img.dataset.src || '';
-                if (title && thumb && !thumb.includes('progress')) {
-                    results.push({ title, thumb });
-                }
-            });
-            return results;
-        }""")
+    response = requests.get(FEED_URL, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+    
+    entries = data.get("feed", {}).get("entry", [])
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=CHECK_DAYS)
+    
+    items = []
+    for entry in entries:
+        # 公開日チェック
+        published_str = entry.get("published", {}).get("$t", "")
+        try:
+            published = datetime.strptime(published_str[:19], "%Y-%m-%dT%H:%M:%S")
+        except:
+            continue
         
-        browser.close()
-        return items
+        if published < cutoff:
+            continue
+        
+        # タイトル
+        title = entry.get("title", {}).get("$t", "")
+        
+        # サムネイル（content内の最初のsrc=）
+        content = entry.get("content", {}).get("$t", "")
+        thumb = ""
+        if 'src="' in content:
+            thumb = content.split('src="')[1].split('"')[0]
+        
+        # 記事URL
+        link = ""
+        for l in entry.get("link", []):
+            if l.get("rel") == "alternate":
+                link = l.get("href", "")
+                break
+        
+        if title and thumb:
+            items.append({
+                "title": title,
+                "thumb": thumb,
+                "link": link,
+                "published": published_str
+            })
+    
+    return items
 
 def load_cache():
     if os.path.exists(CACHE_FILE):
@@ -39,19 +63,19 @@ def load_cache():
     return {}
 
 def save_cache(data):
-    with open(CACHE_FILE, "w") as f:
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def send_discord(new_items):
-    # 20件ずつに分割
     for i in range(0, len(new_items), MAX_NOTIFY):
         chunk = new_items[i:i+MAX_NOTIFY]
         embeds = []
         for item in chunk:
             embeds.append({
                 "title": item["title"],
+                "url": item["link"],
                 "image": {"url": item["thumb"]},
-                "color": 0xE50914  # Netflixレッド
+                "color": 0xE50914
             })
         payload = {
             "content": f"🎬 Netflix新着 {len(new_items)}件（{i+1}〜{i+len(chunk)}件目）",
@@ -61,7 +85,7 @@ def send_discord(new_items):
         print(f"Discord: {r.status_code}")
 
 def main():
-    print("スクレイピング開始...")
+    print("フェッチ開始...")
     items = scrape_titles()
     print(f"取得件数: {len(items)}")
 
