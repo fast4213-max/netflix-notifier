@@ -1,14 +1,14 @@
 name: Netflix新着チェック
 
 on:
-  workflow_dispatch:  # cron-job.orgからAPI経由でトリガー
+  workflow_dispatch:
 
 jobs:
   check:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # cache.jsonをコミットするために必要
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -19,10 +19,7 @@ jobs:
           python-version: '3.11'
 
       - name: 依存インストール
-        run: |
-          pip install -r requirements.txt
-          playwright install chromium
-          playwright install-deps chromium
+        run: pip install -r requirements.txt
 
       - name: スクレイピング実行
         env:
